@@ -102,12 +102,13 @@ void Undistort(cv::InputArray _src, cv::OutputArray _dst,
 }
 
 std::vector<std::pair<cv::Mat, cv::Mat>> PrepareUndistortRectifyMap(
-    cv::InputArray _src, cv::InputArray _cameraMatrix,
+    const cv::Size& src_size, cv::InputArray _cameraMatrix,
     cv::InputArray _distCoeffs, cv::InputArray _newCameraMatrix) {
   using namespace cv;
   // CV_INSTRUMENT_REGION();
 
-  Mat src = _src.getMat(), cameraMatrix = _cameraMatrix.getMat();
+  const int tmp_type = CV_8UC1;
+  Mat src = Mat(src_size, tmp_type), cameraMatrix = _cameraMatrix.getMat();
   Mat distCoeffs = _distCoeffs.getMat(),
       newCameraMatrix = _newCameraMatrix.getMat();
 
@@ -237,8 +238,8 @@ int main() {
   cv::imwrite("Undistort_NN.png", depth_out);
 
   timer.Start();
-  auto map_parts =
-      PrepareUndistortRectifyMap(depth, d_cammat, d_distcoeffs, cv::Mat());
+  auto map_parts = PrepareUndistortRectifyMap(depth.size(), d_cammat,
+                                              d_distcoeffs, cv::Mat());
   timer.End();
   std::cout << "PrepareUndistortRectifyMap " << timer.elapsed_msec()
             << std::endl;
