@@ -46,13 +46,24 @@ class Timer {
   }
 };
 
-void Undistort(const cv::Mat& src, cv::Mat& dst, const cv::Mat& _cameraMatrix,
-               const cv::Mat& _distCoeffs, const cv::Mat& _newCameraMatrix,
+// Original
+// https://github.com/opencv/opencv/blob/590f150d5e032165e27d81294c9b7ac710b77f11/modules/calib3d/src/undistort.dispatch.cpp#L288
+void Undistort(cv::InputArray _src, cv::OutputArray _dst,
+               cv::InputArray _cameraMatrix, cv::InputArray _distCoeffs,
+               cv::InputArray _newCameraMatrix,
                int interpolation = cv::INTER_LINEAR,
                int borderMode = cv::BORDER_CONSTANT,
                const cv::Scalar& borderValue = cv::Scalar()) {
   using namespace cv;
-  dst.create(src.size(), src.type());
+  // CV_INSTRUMENT_REGION();
+
+  Mat src = _src.getMat(), cameraMatrix = _cameraMatrix.getMat();
+  Mat distCoeffs = _distCoeffs.getMat(),
+      newCameraMatrix = _newCameraMatrix.getMat();
+
+  _dst.create(src.size(), src.type());
+  Mat dst = _dst.getMat();
+
   CV_Assert(dst.data != src.data);
 
   int stripe_size0 =
@@ -60,18 +71,18 @@ void Undistort(const cv::Mat& src, cv::Mat& dst, const cv::Mat& _cameraMatrix,
   Mat map1(stripe_size0, src.cols, CV_16SC2),
       map2(stripe_size0, src.cols, CV_16UC1);
 
-  Mat_<double> A, distCoeffs, Ar, I = Mat_<double>::eye(3, 3);
+  Mat_<double> A, Ar, I = Mat_<double>::eye(3, 3);
 
-  _cameraMatrix.convertTo(A, CV_64F);
-  if (_distCoeffs.data)
-    distCoeffs = Mat_<double>(_distCoeffs);
+  cameraMatrix.convertTo(A, CV_64F);
+  if (!distCoeffs.empty())
+    distCoeffs = Mat_<double>(distCoeffs);
   else {
-    distCoeffs.create(5, 1);
+    distCoeffs.create(5, 1, CV_64F);
     distCoeffs = 0.;
   }
 
-  if (_newCameraMatrix.data)
-    _newCameraMatrix.convertTo(Ar, CV_64F);
+  if (!newCameraMatrix.empty())
+    newCameraMatrix.convertTo(Ar, CV_64F);
   else
     A.copyTo(Ar);
 
@@ -91,54 +102,62 @@ void Undistort(const cv::Mat& src, cv::Mat& dst, const cv::Mat& _cameraMatrix,
 }
 
 std::vector<std::pair<cv::Mat, cv::Mat>> PrepareUndistortRectifyMap(
-    const cv::Mat& src, const cv::Mat& _cameraMatrix,
-    const cv::Mat& _distCoeffs, const cv::Mat& _newCameraMatrix) {
+    cv::InputArray _src, cv::InputArray _cameraMatrix,
+    cv::InputArray _distCoeffs, cv::InputArray _newCameraMatrix) {
   using namespace cv;
+  // CV_INSTRUMENT_REGION();
+
+  Mat src = _src.getMat(), cameraMatrix = _cameraMatrix.getMat();
+  Mat distCoeffs = _distCoeffs.getMat(),
+      newCameraMatrix = _newCameraMatrix.getMat();
 
   int stripe_size0 =
       std::min(std::max(1, (1 << 12) / std::max(src.cols, 1)), src.rows);
   Mat map1(stripe_size0, src.cols, CV_16SC2),
       map2(stripe_size0, src.cols, CV_16UC1);
 
-  Mat_<double> A, distCoeffs, Ar, I = Mat_<double>::eye(3, 3);
+  Mat_<double> A, Ar, I = Mat_<double>::eye(3, 3);
 
-  _cameraMatrix.convertTo(A, CV_64F);
-  if (_distCoeffs.data)
-    distCoeffs = Mat_<double>(_distCoeffs);
+  cameraMatrix.convertTo(A, CV_64F);
+  if (!distCoeffs.empty())
+    distCoeffs = Mat_<double>(distCoeffs);
   else {
-    distCoeffs.create(5, 1);
+    distCoeffs.create(5, 1, CV_64F);
     distCoeffs = 0.;
   }
 
-  if (_newCameraMatrix.data)
-    _newCameraMatrix.convertTo(Ar, CV_64F);
+  if (!newCameraMatrix.empty())
+    newCameraMatrix.convertTo(Ar, CV_64F);
   else
     A.copyTo(Ar);
 
-  double v0 = Ar(1, 2);
   std::vector<std::pair<Mat, Mat>> map_parts;
+  double v0 = Ar(1, 2);
   for (int y = 0; y < src.rows; y += stripe_size0) {
     int stripe_size = std::min(stripe_size0, src.rows - y);
     Ar(1, 2) = v0 - y;
     Mat map1_part = map1.rowRange(0, stripe_size),
         map2_part = map2.rowRange(0, stripe_size);
+
     initUndistortRectifyMap(A, distCoeffs, I, Ar, Size(src.cols, stripe_size),
                             map1_part.type(), map1_part, map2_part);
-    // Need to clone() because rowRange() does not copy data
     map_parts.push_back({map1_part.clone(), map2_part.clone()});
   }
+
   return map_parts;
 }
 
 void ApplyUndistortRectifyMap(
-    const cv::Mat& src, cv::Mat& dst,
+    cv::InputArray _src, cv::OutputArray _dst,
     const std::vector<std::pair<cv::Mat, cv::Mat>>& map_parts,
     int interpolation = cv::INTER_LINEAR, int borderMode = cv::BORDER_CONSTANT,
     const cv::Scalar& borderValue = cv::Scalar()) {
   using namespace cv;
-  if (dst.size() != src.size() || dst.type() != src.type()) {
-    dst.create(src.size(), src.type());
-  }
+  Mat src = _src.getMat();
+
+  _dst.create(src.size(), src.type());
+  Mat dst = _dst.getMat();
+
   CV_Assert(dst.data != src.data);
 
   int stripe_size0 =
